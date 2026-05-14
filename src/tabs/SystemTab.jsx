@@ -1,19 +1,79 @@
 import React, { useState } from "react";
 
 export default function SystemTab() {
-  const [sn, setSn] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
+  const [statusLine, setStatusLine] = useState(
+    "Presiona actualizar para consultar el estado del robot."
+  );
 
-  async function callApi(url, opts = {}) {
+  const [loading, setLoading] = useState(false);
+
+  function formatTimeAgo(seconds) {
+    if (seconds < 60) {
+      return `${seconds} segundos`;
+    }
+
+    const mins = Math.floor(seconds / 60);
+
+    if (mins < 60) {
+      return `${mins} minuto${mins > 1 ? "s" : ""}`;
+    }
+
+    const hours = Math.floor(mins / 60);
+
+    return `${hours} hora${hours > 1 ? "s" : ""}`;
+  }
+
+  async function refreshStatus() {
     setLoading(true);
-    setResult(null);
+
     try {
-      const res = await fetch(url, opts);
+      const res = await fetch("/api/status");
       const json = await res.json();
-      setResult(json);
-    } catch (e) {
-      setResult({ ok: false, message: e.message });
+
+      const d = json?.data?.data || {};
+
+      const runState = d.run_state || "UNKNOWN";
+
+      const ts = Number(d.timestamp);
+
+      let freshness = "";
+      let ago = "";
+
+      if (ts) {
+        const now = Math.floor(Date.now() / 1000);
+
+        const diff = Math.max(0, now - ts);
+
+        ago = formatTimeAgo(diff);
+
+        if (diff < 120) {
+          freshness = "🟢 En vivo";
+        } else {
+          freshness = "📦 Cache";
+        }
+      }
+
+      let stateText = "Robot disponible";
+
+      if (runState === "BUSY") {
+        stateText = "🤖 Robot ocupado";
+      }
+
+      if (runState === "OFFLINE") {
+        stateText = "🔴 Robot sin conexión";
+      }
+
+      if (runState === "DISABLE") {
+        stateText = "🟠 Robot no disponible";
+      }
+
+      setStatusLine(
+        `${freshness} · ${stateText} · Actualizado hace ${ago}`
+      );
+    } catch {
+      setStatusLine(
+        "❌ No fue posible consultar el estado del robot"
+      );
     } finally {
       setLoading(false);
     }
@@ -22,58 +82,21 @@ export default function SystemTab() {
   return (
     <div className="grid">
       <div className="subcard">
-        <div className="label">SN (opcional para status)</div>
-        <input
-          className="input"
-          value={sn}
-          onChange={(e) => setSn(e.target.value)}
-          placeholder="Deja vacío para usar PUDU_SN"
-        />
+        <button
+          className="btn orange"
+          onClick={refreshStatus}
+          disabled={loading}
+        >
+          {loading
+            ? "Consultando..."
+            : "Actualizar Estado"}
+        </button>
 
-        <div style={{ height: 14 }} />
+        <div style={{ height: 18 }} />
 
-        <div className="row" style={{ alignItems: "stretch" }}>
-          <button
-            className="btn primary"
-            onClick={() => callApi("/api/healthCheck", { method: "POST" })}
-            disabled={loading}
-          >
-            {loading ? "Consultando..." : "HealthCheck"}
-          </button>
-
-          <button
-            className="btn"
-            onClick={() => callApi("/api/mapCurrent")}
-            disabled={loading}
-          >
-            Get Map Current
-          </button>
-
-          <button
-            className="btn"
-            onClick={() => callApi(`/api/status${sn ? `?sn=${encodeURIComponent(sn)}` : ""}`)}
-            disabled={loading}
-          >
-            Status
-          </button>
+        <div className="statusLine">
+          {statusLine}
         </div>
-
-        <div style={{ marginTop: 12 }} className="small">
-          Tip: si ves <b>CLOUD_OPEN_TIMEOUT</b>, consulta Status: puede que esté en <b>BUSY</b>.
-        </div>
-      </div>
-
-      <div className="subcard">
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <div className="badge">Respuesta</div>
-          <div className="small">
-            {loading ? "Consultando..." : result?.ok ? "✅ OK" : result ? "❌ Error" : "—"}
-          </div>
-        </div>
-
-        <div style={{ height: 10 }} />
-
-        <pre>{result ? JSON.stringify(result, null, 2) : "Presiona un botón para ver la respuesta aquí."}</pre>
       </div>
     </div>
   );
